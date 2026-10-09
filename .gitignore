@@ -1,0 +1,16 @@
+# Vendored upstream clones — auto-cloned by setup.sh, updated via `git pull`
+audio/speaker-tuning-to-easyeffects/
+hdr/hdr-edid-fix/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Converter artifacts (driver packages, scratch)
+driver-cache/
+
+# Editors / OS
+.DS_Store
+*.swp
