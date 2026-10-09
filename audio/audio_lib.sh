@@ -77,10 +77,67 @@ audio_pw_route_active() {
     if ! command -v pw-dump >/dev/null 2>&1; then
         return 1
     fi
-    if pw-dump 2>/dev/null | grep -q 'effect_input\.Dolby'; then
+    # Capture first, then grep: `pw-dump | grep -q` under `set -o pipefail`
+    # fails whenever grep -q exits early (SIGPIPE → pw-dump rc 141), even on
+    # a match — a match would then read as "not active".
+    local dump
+    dump="$(pw-dump 2>/dev/null)" || true
+    if grep -q 'effect_input\.Dolby' <<<"$dump"; then
         return 0
     fi
     return 1
+}
+
+# True if PipeWire can parse type="lv2" filter-chain nodes at all.
+# This is the *loader* (spa.filter-graph plugin), NOT the LSP/Calf bundles:
+# without it every conf with lv2 nodes is silently discarded at load and the
+# sink never appears (journal: "can't load plugin type 'lv2'"). Distros split
+# it out: Fedora pipewire-module-filter-chain-lv2, Ubuntu
+# libspa-0.2-modules-extra, Debian libspa-0.2-modules, openSUSE
+# pipewire-spa-plugins-0_2. AUDIO_SPA_FG_DIRS overrides the search dirs
+# (used by tests to simulate a missing loader).
+audio_pw_loader_present() {
+    local d
+    if [ -n "${AUDIO_SPA_FG_DIRS:-}" ]; then
+        for d in $AUDIO_SPA_FG_DIRS; do
+            if [ -f "$d/libspa-filter-graph-plugin-lv2.so" ]; then
+                return 0
+            fi
+        done
+        return 1
+    fi
+    for d in /usr/lib64/spa-0.2/filter-graph /usr/lib/spa-0.2/filter-graph \
+             /usr/lib/*/spa-0.2/filter-graph; do
+        if [ -f "$d/libspa-filter-graph-plugin-lv2.so" ]; then
+            return 0
+        fi
+    done
+    # pre-1.2 layout: the LV2 support was a pipewire module, not a spa plugin
+    for d in /usr/lib64/pipewire-0.3 /usr/lib/pipewire-0.3 /usr/lib/*/pipewire-0.3; do
+        if [ -f "$d/libpipewire-module-filter-chain-lv2.so" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Distro package that provides the LV2 loader (best effort; the caller
+# re-checks the .so afterwards and guides the user if the mapping missed).
+audio_pw_loader_pkg() {
+    case "$(pkg_manager)" in
+        dnf)    printf 'pipewire-module-filter-chain-lv2\n' ;;
+        apt)    # Ubuntu ships lv2 in -extra; Debian folds it into the base
+                # modules package. Ask apt which name it actually knows.
+                if command -v apt-cache >/dev/null 2>&1 &&
+                   apt-cache show libspa-0.2-modules-extra >/dev/null 2>&1; then
+                    printf 'libspa-0.2-modules-extra\n'
+                else
+                    printf 'libspa-0.2-modules\n'
+                fi ;;
+        pacman) printf 'libspa-0.2\n' ;;
+        zypper) printf 'pipewire-spa-plugins-0_2\n' ;;
+        *)      printf '\n' ;;
+    esac
 }
 
 # True if an EasyEffects process is running (native or Flatpak).

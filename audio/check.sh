@@ -77,7 +77,20 @@ elif [ "$pw_staged" = 1 ]; then
     while IFS= read -r _; do
         conf_count=$((conf_count + 1))
     done < <(compgen -G "$AUDIO_PW_DIR/Dolby_*.conf" || true)
-    chk_ok "pipewire route: $conf_count filter-chain conf(s) staged in ${AUDIO_PW_DIR#"$HOME"}/"
+    chk_ok "pipewire route: $conf_count filter-chain conf(s) staged in ${AUDIO_PW_DIR#"$HOME"}"
+
+    # The LV2 loader is separate from the LSP/Calf bundles: missing loader =
+    # conf parses, every lv2 node is discarded, sink never appears.
+    pw_rc=0
+    if audio_pw_loader_present; then
+        chk_ok "PipeWire LV2 filter loader present"
+    else
+        chk_fail "PipeWire cannot load LV2 chains: libspa-filter-graph-plugin-lv2.so missing"
+        chk_info "Fedora: sudo dnf install pipewire-module-filter-chain-lv2"
+        chk_info "Ubuntu: sudo apt install libspa-0.2-modules-extra (Debian: libspa-0.2-modules)"
+        chk_info "without it the chain silently fails: 'sink Dolby_* did not appear'"
+        pw_rc=1
+    fi
 
     if audio_pw_route_active; then
         chk_ok "filter-chain loaded in PipeWire (no GUI, no daemon needed)"
@@ -91,6 +104,7 @@ elif [ "$pw_staged" = 1 ]; then
         chk_info "quit it, or its Background Service, now"
     fi
     chk_info "change voicing: ./setup.sh audio --backend pipewire --variant detailed|warm"
+    exit "$pw_rc"
 
 else
     chk_fail "no route installed — nothing applies the Dolby tuning"

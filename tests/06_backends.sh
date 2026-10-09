@@ -87,7 +87,8 @@ assert_contains "$out" "backend: pipewire" "setup.sh forwards backend to audio"
 # module flags must not leak to other modules
 out="$(timeout 10 ./setup.sh cli --backend pw 2>&1)"; rc=$?
 assert_rc "$rc" 1 "backend flag on cli is rejected"
-assert_contains "$out" "belong to the audio module" "rejection explains ownership"
+assert_contains "$out" "belongs to the audio module" "rejection explains ownership"
+assert_contains "$out" "--backend" "rejection names the offending flag"
 
 # setup.sh rejects unknown flags itself
 out="$(timeout 10 ./setup.sh audio --frobnicate 2>&1)"; rc=$?
@@ -215,5 +216,78 @@ assert_contains "$out" "manual" "hdr uninstall points at the manual path"
 out="$(timeout 10 ./setup.sh all --uninstall 2>&1)"; rc=$?
 assert_rc "$rc" 1 "all --uninstall rejected"
 assert_contains "$out" "per module" "rejection explains per-module uninstall"
+
+# ================================================== 8. --force (pipewire) ====
+sandbox_home
+allow_mutations
+
+# --force reaches the converter command
+out="$(timeout 30 ./setup.sh audio --backend pipewire --force --dry-run 2>&1)"; rc=$?
+assert_rc "$rc" 0 "--force with pipewire completes"
+assert_contains "$out" "dolby_to_pipewire.py" "converter invoked"
+grep -q -- "--force" <<<"$(grep 'dolby_to_pipewire.py ' <<<"$out" | grep -v doctor)" &&
+    _pass "--force appears in the converter invocation" ||
+    _fail "--force missing from the converter invocation"
+
+# --force on easyeffects: accepted, ignored with a note (converter overwrites silently)
+out="$(timeout 30 ./setup.sh audio --backend easyeffects --force --dry-run 2>&1)"; rc=$?
+assert_rc "$rc" 0 "--force on easyeffects accepted"
+assert_contains "$out" "ignoring it" "--force ignored with explanation on easyeffects"
+conv_line="$(grep 'dolby_to_easyeffects.py ' <<<"$out" | grep -v doctor | head -1)"
+assert_not_contains "$conv_line" "--force" "easyeffects converter command carries no --force"
+
+# --force on another module: rejected, names the flag
+out="$(timeout 10 ./setup.sh cli --force 2>&1)"; rc=$?
+assert_rc "$rc" 1 "--force on cli rejected"
+assert_contains "$out" "--force" "rejection names --force"
+assert_contains "$out" "belongs to the audio module" "ownership explained"
+
+# existing conf + no --force → fail fast with the fix (real run, not dry-run)
+stage_pw
+out="$(timeout 30 ./setup.sh audio --backend pipewire </dev/null 2>&1)"; rc=$?
+assert_rc "$rc" 1 "existing conf without --force fails fast"
+assert_contains "$out" "pass --force to overwrite" "fail-fast names --force"
+assert_contains "$out" "--uninstall --backend pipewire" "fail-fast offers removal too"
+assert_not_contains "$out" "dolby_to_pipewire.py " "converter never ran (no wasted generation)"
+
+# dry-run only warns (a preview must not abort)
+out="$(timeout 30 ./setup.sh audio --backend pipewire --dry-run 2>&1)"; rc=$?
+assert_rc "$rc" 0 "dry-run with existing conf completes"
+assert_contains "$out" "would stop here" "dry-run warns about the would-be failure"
+
+# --variant all: rejected with the reasoning (needs --target-sink '')
+out="$(timeout 10 ./setup.sh audio --variant all 2>&1)"; rc=$?
+assert_rc "$rc" 1 "--variant all rejected"
+assert_contains "$out" "--target-sink" "rejection explains the requirement"
+rm -rf "${XDG_CONFIG_HOME}/pipewire"
+
+# ============================================ 9. LV2 loader detection ========
+# The loader (libspa-filter-graph-plugin-lv2.so) is NOT the LSP/Calf bundles:
+# missing loader = conf parses, every lv2 node discarded, sink never appears.
+# Fedora splits it into pipewire-module-filter-chain-lv2.
+loader_dir_ok="$TEST_TMP/loader-present"
+loader_dir_missing="$TEST_TMP/loader-missing"
+mkdir -p "$loader_dir_ok" "$loader_dir_missing"
+touch "$loader_dir_ok/libspa-filter-graph-plugin-lv2.so"
+
+# loader missing → check.sh fails naming the loader + package
+sandbox_home
+stage_pw
+out="$(AUDIO_SPA_FG_DIRS="$loader_dir_missing" bash ./audio/check.sh 2>&1)"; rc=$?
+assert_rc "$rc" 1 "missing loader → check fails"
+assert_contains "$out" "libspa-filter-graph-plugin-lv2.so missing" "check names the loader file"
+assert_contains "$out" "pipewire-module-filter-chain-lv2" "check names the Fedora package"
+
+# loader present → the loader line passes
+out="$(AUDIO_SPA_FG_DIRS="$loader_dir_ok" bash ./audio/check.sh 2>&1)"; rc=$?
+assert_contains "$out" "LV2 filter loader present" "check sees the loader when present"
+
+# install.sh with missing loader: warns + attempts the distro package (dry-run)
+allow_mutations
+out="$(AUDIO_SPA_FG_DIRS="$loader_dir_missing" timeout 30 ./setup.sh audio --backend pipewire --dry-run 2>&1)"; rc=$?
+assert_rc "$rc" 0 "install dry-run with missing loader completes"
+assert_contains "$out" "loader plugin is missing" "install detects the missing loader"
+assert_contains "$out" "pipewire-module-filter-chain-lv2" "install names the Fedora package"
+rm -rf "${XDG_CONFIG_HOME}/pipewire"
 
 finish

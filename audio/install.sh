@@ -23,20 +23,30 @@ usage() {
     cat <<EOF
 audio module — Dolby Atmos speaker tuning for Linux.
 
-  ./install.sh [--backend easyeffects|pipewire] [--dry-run] [--yes]
+  ./install.sh [--backend easyeffects|pipewire] [--variant NAME]
+               [--force] [--dry-run] [--yes]
 
   --backend easyeffects  EasyEffects 8 presets + autoload (default; GUI to
                          switch Dolby-Balanced/Detailed/Warm live)
   --backend pipewire     native PipeWire filter-chain, no GUI, no daemon
-                         (activates Balanced; other voicings: see README)
+                         (activates Balanced; other voicings: see --variant)
   ee / pw                accepted as short aliases
+  --variant balanced|detailed|warm|all
+                         pipewire only: which voicing to convert (default
+                         balanced; 'all' needs --target-sink semantics the
+                         runbook doesn't set — use balanced/detailed/warm)
+  --force                pipewire only: overwrite an existing Dolby_*.conf
+                         + .irs instead of the converter refusing
 
   1. clones antoinecellerier/speaker-tuning-to-easyeffects if absent
   2. creates/repairs .venv inside the repo (no system python packages)
   3. pip-installs numpy/scipy/etc. into that venv
   4. installs the backend's dependencies:
        easyeffects → EasyEffects 8 (distro package or Flatpak hint)
-       pipewire    → LSP + Calf LV2 plugins + lilv (auto, via dnf/apt/...)
+       pipewire    → LSP + Calf LV2 plugins + lilv (auto) AND the PipeWire
+                     LV2 filter loader (libspa-filter-graph-plugin-lv2.so),
+                     which some distros split out — without it the chain
+                     silently fails to load
   5. runs the converter against the bundled XML and activates it; staged
      files of the *other* backend are removed first (prompted), because
      both chains processing the same audio sounds wrong
@@ -47,10 +57,11 @@ Verify:                ./check.sh
 EOF
 }
 
-# --backend/--variant come before parse_common_flags (which rejects
-# anything it does not know).
+# --backend/--variant/--force come before parse_common_flags (which
+# rejects anything it does not know).
 BACKEND="easyeffects"
 VARIANT=""
+FORCE=0
 passthrough=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -62,6 +73,7 @@ while [ $# -gt 0 ]; do
             [ $# -ge 2 ] || die "--variant needs a value (balanced|detailed|warm|all)"
             VARIANT="$2"; shift 2 ;;
         --variant=*) VARIANT="${1#--variant=}"; shift ;;
+        --force) FORCE=1; shift ;;
         *) passthrough+=("$1"); shift ;;
     esac
 done
@@ -74,9 +86,15 @@ fi
 BACKEND="$normalized"
 if [ -n "$VARIANT" ]; then
     case "$VARIANT" in
-        balanced|detailed|warm|all) ;;
-        *) die "unknown variant '$VARIANT' (balanced|detailed|warm|all)" ;;
+        balanced|detailed|warm) ;;
+        all)
+            die "--variant all installs several chains and needs --target-sink '' + smart-filter routing off — not automated here; run the converter by hand, see audio/README.md" ;;
+        *) die "unknown variant '$VARIANT' (balanced|detailed|warm)" ;;
     esac
+fi
+if [ "$FORCE" = 1 ] && [ "$BACKEND" != pipewire ]; then
+    log_warn "--force is only meaningful for the pipewire backend (the easyeffects converter overwrites silently) — ignoring it"
+    FORCE=0
 fi
 
 REPO="$RUNBOOK_ROOT/audio/speaker-tuning-to-easyeffects"
@@ -234,6 +252,34 @@ else
     else
         log_warn "lsp-plugins.lv2 not found yet — the converter will report if it is truly missing"
     fi
+
+    # The LV2 *loader* is a different thing from the bundles above: without
+    # it PipeWire parses the conf, then silently discards every lv2 node and
+    # the sink never appears (journal: "can't load plugin type 'lv2'"). The
+    # converter's own doctor checks bundles only, so it cannot catch this.
+    if audio_pw_loader_present; then
+        log_ok "PipeWire LV2 filter loader present (libspa-filter-graph-plugin-lv2.so)"
+    else
+        loader_pkg="$(audio_pw_loader_pkg)"
+        if [ -n "$loader_pkg" ]; then
+            log_warn "PipeWire cannot load LV2 filter-chains: the lv2 loader plugin is missing"
+            log_info "some distros split it out (Fedora: pipewire-module-filter-chain-lv2)"
+            if pkg_install "$loader_pkg"; then
+                if audio_pw_loader_present; then
+                    log_ok "loader installed: $loader_pkg"
+                else
+                    log_warn "package installed but loader .so still not found — search for the package providing"
+                    log_info "  libspa-filter-graph-plugin-lv2.so  (dnf provides 'libspa*lv2*' / apt-file search)"
+                    log_info "without it the chain will fail to load: sink 'Dolby_*' never appears"
+                fi
+            else
+                log_warn "skipped — the filter-chain will NOT load without the loader"
+                log_info "install it later: ./setup.sh audio --backend pipewire"
+            fi
+        else
+            log_warn "PipeWire LV2 loader .so not found; install the package providing it (see audio/README.md)"
+        fi
+    fi
 fi
 
 # ------------------------------ interstitial: deactivate the other backend --
@@ -295,6 +341,21 @@ if [ "$BACKEND" = easyeffects ]; then
 else
     variant_args=()
     [ -n "$VARIANT" ] && variant_args=(--variant "$VARIANT")
+
+    # Fail fast: without --force the converter generates everything, then
+    # refuses at the very end because the conf exists — a wasted ~30s run.
+    # Name rule (from the tool): preset Dolby-Balanced → conf Dolby_Balanced.
+    vname="${VARIANT:-balanced}"
+    conf_name="Dolby_$(tr '[:lower:]' '[:upper:]' <<<"${vname:0:1}")${vname:1}"
+    if [ "$FORCE" = 0 ] && [ -f "$AUDIO_PW_DIR/$conf_name.conf" ]; then
+        if [ "$DRY_RUN" = 1 ]; then
+            log_warn "$conf_name.conf exists — the real run would stop here; pass --force to overwrite"
+        else
+            die "$AUDIO_PW_DIR/$conf_name.conf exists — pass --force to overwrite, or remove it first: ./setup.sh audio --uninstall --backend pipewire"
+        fi
+    fi
+    [ "$FORCE" = 1 ] && variant_args+=(--force)
+
     log_info "activating: the converter restarts your user PipeWire (audio pauses ~1s)"
     run "$VENV/bin/python" "$REPO/dolby_to_pipewire.py" "${xmls[0]}" \
         ${variant_args[@]+"${variant_args[@]}"}

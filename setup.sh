@@ -47,8 +47,9 @@ Common flags (every command):
 audio module flags:
   --backend easyeffects|pipewire   how to apply the Dolby tuning
                                    (aliases: ee, pw; default: easyeffects)
-  --variant balanced|detailed|warm|all
-                                   pipewire backend only: which voicing
+  --variant balanced|detailed|warm  pipewire backend only: which voicing
+  --force                          pipewire backend only: overwrite an
+                                   existing Dolby_*.conf instead of failing
 
 Notes:
   * sudo is only ever used after an explicit confirmation (see --yes).
@@ -222,6 +223,7 @@ main() {
             --dry-run|--yes|-y) common+=("$1") ;;
             --uninstall)        uninstall=1 ;;
             -h|--help)          want_help=1 ;;
+            --force)            audio_flags+=("$1") ;;
             --backend|--variant)
                 [ $# -ge 2 ] || die "$1 needs a value (see --help)"
                 audio_flags+=("$1" "$2"); shift ;;
@@ -234,7 +236,7 @@ main() {
 
     # Audio-only flags may never go to another module.
     if [ "${#audio_flags[@]}" -gt 0 ] && [ "$cmd" != audio ] && [ "$cmd" != all ]; then
-        die "--backend/--variant belong to the audio module (try: ./setup.sh audio ...)"
+        die "'${audio_flags[0]}' belongs to the audio module (try: ./setup.sh audio ...)"
     fi
 
     case "$cmd" in

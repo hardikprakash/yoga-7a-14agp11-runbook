@@ -15,7 +15,11 @@ if [ ! -f "$SCRIPT" ]; then
     exit 1
 fi
 
-if ! systemctl list-unit-files "$UNIT" 2>/dev/null | grep -q "$UNIT"; then
+# Capture-then-grep throughout: `... | grep -q` under `set -o pipefail`
+# reads as failure whenever grep exits early (SIGPIPE on the producer), even
+# on a match.
+unit_files="$(systemctl list-unit-files "$UNIT" 2>/dev/null)" || true
+if ! grep -q "$UNIT" <<<"$unit_files"; then
     chk_fail "script present but $UNIT missing"
     chk_info "run ./setup.sh touchscreen"
     exit 1
@@ -30,7 +34,9 @@ else
 fi
 
 # Did it actually run this boot, and did the touch device register?
-if journalctl -b -t wacf2200-rebind --no-pager 2>/dev/null | grep -q "Rebind complete"; then
+# Capture-then-grep: `journalctl | grep -q` can SIGPIPE under pipefail.
+rebind_log="$(journalctl -b -t wacf2200-rebind --no-pager 2>/dev/null)" || true
+if grep -q "Rebind complete" <<<"$rebind_log"; then
     chk_ok "rebind ran this boot (journalctl -b -t wacf2200-rebind)"
 else
     chk_warn "rebind has not run this boot yet (needs a reboot after install)"

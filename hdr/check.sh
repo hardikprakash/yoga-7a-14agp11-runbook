@@ -78,12 +78,16 @@ fi
 
 # --- problem 2: mutter's empty HDR mastering metadata ----------------------
 if pgrep -x gnome-shell >/dev/null 2>&1; then
-    if grep -rq "hdr-mastering-metadata" /usr/share/doc/mutter*/ 2>/dev/null \
-        || rpm -V mutter 2>/dev/null | grep -q "^..[mc]"; then
+    if grep -rq "hdr-mastering-metadata" /usr/share/doc/mutter*/ 2>/dev/null; then
         chk_info "mutter: modified build detected (mastering-metadata patch may be applied)"
     else
-        chk_warn "mutter: HDR on but washed out? stock mutter sends empty mastering metadata"
-        chk_info "details + patch: hdr/README.md (problem 2) — optional, cosmetics only"
+        modified="$(rpm -V mutter 2>/dev/null)" || true
+        if grep -q "^..[mc]" <<<"$modified"; then
+            chk_info "mutter: modified build detected (mastering-metadata patch may be applied)"
+        else
+            chk_warn "mutter: HDR on but washed out? stock mutter sends empty mastering metadata"
+            chk_info "details + patch: hdr/README.md (problem 2) — optional, cosmetics only"
+        fi
     fi
     chk_info "verify what mutter programs: hdr/hdr-edid-fix/infoframe.sh (HDR on)"
 fi

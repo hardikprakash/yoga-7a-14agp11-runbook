@@ -28,11 +28,17 @@ at once**, or the audio gets processed twice (echoey, over-compressed).
 ./setup.sh audio                              # easyeffects (default)
 ./setup.sh audio --backend pipewire           # native, no GUI
 ./setup.sh audio --backend pw --variant warm  # aliases + voicing (pipewire only)
+./setup.sh audio --backend pipewire --force   # overwrite an existing conf
 ```
 
 Switching is clean: when the *other* backend's files are staged, the
 installer prompts to remove them first (declining keeps them, but warns
 loudly about double-processing).
+
+Re-running the **pipewire** backend while its conf exists fails fast with
+"pass --force to overwrite" (the converter would refuse at the end of a
+long generation otherwise). `--force` is pipewire-only — the EasyEffects
+converter overwrites silently, so the flag is ignored there with a note.
 
 ## The XML in `xml/`
 
@@ -119,6 +125,18 @@ see the upstream docs: `speaker-tuning-to-easyeffects/docs/dolby-to-easyeffects.
 - **check.sh says "both routes staged"** → you (or a previous run) left
   files from both backends. Remove one: `./setup.sh audio --uninstall
   --backend <the one you don't want>`.
+- **"sink Dolby_Balanced did not appear" / "can't load plugin type 'lv2'"
+  (journal)** → the LSP/Calf *bundles* are installed but PipeWire's LV2
+  *loader* is missing. Some distros split it out (Fedora:
+  `pipewire-module-filter-chain-lv2`, Ubuntu:
+  `libspa-0.2-modules-extra`, Debian: `libspa-0.2-modules`). The runbook's
+  installer checks for it; `./audio/check.sh` reports it. This failure is
+  silent from the converter's side: the conf is written, PipeWire skips
+  the chain, and the upstream tool's own doctor still reports "LV2
+  plugins: present" because it only checks the bundles.
+- **`conf exists; pass --force to overwrite`** → re-running the pipewire
+  backend with its conf still staged. Pass `--force` to overwrite, or
+  remove it first: `./setup.sh audio --uninstall --backend pipewire`.
 - **No audible difference** → run the `--doctor` command for your route;
   then check the global bypass and desktop volume.
 - **Quieter than Windows** → easyeffects: add `--enable autogain` to the

@@ -86,14 +86,17 @@ hard-coded home paths, and — for the audio backends — flag parsing
 (both syntaxes, aliases, bad/missing values, no hangs), setup.sh flag
 routing, route-state detection (none/one/both staged), per-backend
 uninstall (removes exactly its files, idempotent, declines without
-confirmation), and switch prompts that delete nothing under `--dry-run`.
+confirmation), switch prompts that delete nothing under `--dry-run`,
+`--force` (pipewire-only, fail-fast on an existing conf), `--variant all`
+rejection, and the PipeWire LV2 loader probe (missing loader = chain
+silently discarded; Fedora `pipewire-module-filter-chain-lv2`).
 
 ## State on this machine (as of writing)
 
 | Module | State |
 |---|---|
 | cli | ✅ installed (4 functions in `~/.bashrc`) |
-| audio | ❌ **both backends staged** (PipeWire conf from an earlier run + EasyEffects presets) — resolve with `./setup.sh audio --backend <easyeffects\|pipewire>` (removes the other), then install EE 8 / LV2 deps |
+| audio | ✅ **pipewire backend active** — filter-chain loaded (LV2 loader package `pipewire-module-filter-chain-lv2` was the missing piece; installed 2026-10-09). Switch: `./setup.sh audio --backend easyeffects` |
 | fingerprint | sensor detected; fingers not yet enrolled (`fprintd-enroll $USER`) |
 | touchscreen | ✅ service enabled, touch working |
 | color-profiles | ✅ 9/9 imported (assignment: Settings → Color) |
