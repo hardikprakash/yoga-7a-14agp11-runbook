@@ -21,6 +21,8 @@ source "$ROOT/lib.sh"
 # User-level first, sudo last so as few prompts as possible happen early.
 MODULES=(cli fingerprint audio color-profiles touchscreen hdr)
 INSTALL_ORDER=(cli fingerprint audio color-profiles touchscreen)
+# Common flags captured by main() and forwarded to every module in `all`.
+SETUP_COMMON=()
 
 usage() {
     cat <<EOF
@@ -29,18 +31,30 @@ ${_c_bold}yoga-7a-14agp11 runbook setup${_c_reset}
 Usage:
   ./setup.sh status               show what is installed and what is missing
   ./setup.sh all [--dry-run]      run every automatable module, in order
+                                  (audio's --backend/--variant work here too
+                                  and are forwarded to audio only)
   ./setup.sh <module> [...]       run one module:
                                   ${MODULES[*]}
+  ./setup.sh <module> --uninstall run that module's uninstall.sh
+                                  (available: audio, touchscreen)
   ./setup.sh help                 this text
 
-Flags:
+Common flags (every command):
   --dry-run    print every action instead of performing it
   --yes, -y    answer yes to confirmation prompts (incl. sudo)
-  -h, --help   show help for a module
+  -h, --help   show help (for a module: that module's usage)
+
+audio module flags:
+  --backend easyeffects|pipewire   how to apply the Dolby tuning
+                                   (aliases: ee, pw; default: easyeffects)
+  --variant balanced|detailed|warm|all
+                                   pipewire backend only: which voicing
 
 Notes:
   * sudo is only ever used after an explicit confirmation (see --yes).
   * ./setup.sh hdr never edits the bootloader itself; it prints the steps.
+  * module flags are validated by their own module, so a typo in
+    --backend surfaces with the audio module's message.
 EOF
 }
 
@@ -107,7 +121,11 @@ cmd_status() {
 }
 
 # ------------------------------------------------------------------- all ----
+# $@ = audio-only flags (--backend/--variant); forwarded to audio alone,
+# because cli/fingerprint/... do not understand them. Common flags
+# (--dry-run/--yes) come from SETUP_COMMON and go to every module.
 cmd_all() {
+    local -a audio_flags=("$@")
     local m failed=() rc
 
     log_step "Running all automatable modules: ${INSTALL_ORDER[*]}"
@@ -118,8 +136,12 @@ cmd_all() {
             continue
         fi
         log_step "module: $m"
+        local -a mod_args=("${SETUP_COMMON[@]+"${SETUP_COMMON[@]}"}")
+        if [ "$m" = audio ] && [ "${#audio_flags[@]}" -gt 0 ]; then
+            mod_args+=("${audio_flags[@]}")
+        fi
         rc=0
-        bash "$install" "$@" || rc=$?
+        bash "$install" ${mod_args[@]+"${mod_args[@]}"} || rc=$?
         if [ "$rc" -ne 0 ]; then
             failed+=("$m")
             log_warn "$m: did not complete (exit $rc)"
@@ -190,21 +212,72 @@ main() {
     local cmd="${1:-help}"
     [ $# -gt 0 ] && shift || true
 
+    # Split argv: setup-level flags, audio module flags (forwarded only to
+    # audio), the --uninstall dispatch switch, and -h/--help. Anything else
+    # is rejected here with a pointer to --help.
+    local -a common=() audio_flags=()
+    local uninstall=0 want_help=0
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --dry-run|--yes|-y) common+=("$1") ;;
+            --uninstall)        uninstall=1 ;;
+            -h|--help)          want_help=1 ;;
+            --backend|--variant)
+                [ $# -ge 2 ] || die "$1 needs a value (see --help)"
+                audio_flags+=("$1" "$2"); shift ;;
+            --backend=*|--variant=*)
+                audio_flags+=("$1") ;;
+            *) die "unknown flag: $1 (try --help)" ;;
+        esac
+        shift
+    done
+
+    # Audio-only flags may never go to another module.
+    if [ "${#audio_flags[@]}" -gt 0 ] && [ "$cmd" != audio ] && [ "$cmd" != all ]; then
+        die "--backend/--variant belong to the audio module (try: ./setup.sh audio ...)"
+    fi
+
     case "$cmd" in
         -h|--help|help) usage ;;
-        status)         parse_common_flags "$@"; cmd_status ;;
-        all)            parse_common_flags "$@"; refuse_root; cmd_all "$@" ;;
+        status)
+            if [ "$want_help" = 1 ]; then usage; return; fi
+            [ "$uninstall" = 1 ] && die "status takes no --uninstall"
+            [ "${#audio_flags[@]}" -eq 0 ] || die "status takes no module flags"
+            parse_common_flags ${common[@]+"${common[@]}"}
+            cmd_status ;;
+        all)
+            if [ "$want_help" = 1 ]; then usage; return; fi
+            [ "$uninstall" = 1 ] && die "'all' has no --uninstall — run it per module: ./setup.sh <module> --uninstall"
+            parse_common_flags ${common[@]+"${common[@]}"}
+            refuse_root
+            SETUP_COMMON=("${common[@]+"${common[@]}"}")
+            cmd_all ${audio_flags[@]+"${audio_flags[@]}"} ;;
         *)
             if is_module "$cmd"; then
-                parse_common_flags "$@"
-                refuse_root
                 if [ "$cmd" = hdr ]; then
+                    # hdr has no install.sh of its own: it only ever prints
+                    # status + manual instructions (bootloader risk).
+                    [ "$uninstall" = 1 ] &&
+                        die "hdr's uninstall is manual: cd hdr/hdr-edid-fix && sudo ./uninstall.sh (bootloader edit)"
+                    parse_common_flags ${common[@]+"${common[@]}"}
+                    refuse_root
                     cmd_hdr
-                else
-                    local install="$ROOT/$cmd/install.sh"
-                    [ -f "$install" ] || die "module '$cmd' has no install.sh"
-                    bash "$install" "$@"
+                    return
                 fi
+                [ "$want_help" = 1 ] && { bash "$ROOT/$cmd/install.sh" -h; return; }
+                local script="$ROOT/$cmd/install.sh"
+                if [ "$uninstall" = 1 ]; then
+                    script="$ROOT/$cmd/uninstall.sh"
+                    [ -f "$script" ] || die "module '$cmd' has no uninstall.sh"
+                fi
+                [ -f "$script" ] || die "module '$cmd' has no install.sh"
+                parse_common_flags ${common[@]+"${common[@]}"}
+                refuse_root
+                local -a fwd=("${common[@]+"${common[@]}"}")
+                if [ "$cmd" = audio ] && [ "${#audio_flags[@]}" -gt 0 ]; then
+                    fwd+=("${audio_flags[@]}")
+                fi
+                bash "$script" ${fwd[@]+"${fwd[@]}"}
             else
                 die "unknown command: $cmd (try --help)"
             fi

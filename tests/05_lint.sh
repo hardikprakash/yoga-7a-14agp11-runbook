@@ -19,7 +19,7 @@ fi
 
 SCRIPTS=(setup.sh lib.sh
     cli/install.sh cli/setup_shell_functions.sh cli/check.sh
-    audio/install.sh audio/check.sh
+    audio/install.sh audio/uninstall.sh audio/audio_lib.sh audio/check.sh
     fingerprint/install.sh fingerprint/check.sh
     touchscreen/install.sh touchscreen/uninstall.sh touchscreen/check.sh
     color-profiles/install.sh color-profiles/check.sh

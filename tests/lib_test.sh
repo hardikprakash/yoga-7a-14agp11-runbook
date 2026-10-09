@@ -55,9 +55,20 @@ STUB
     done
 
     # --- systemctl: log+skip mutating verbs, forward read-only verbs --------
+    # Calls look like `systemctl --user restart pipewire`, so skip leading
+    # flags (--user/--system/--quiet/-q) before picking the verb. Without
+    # this, `$1` is "--user" and mutating calls fall through to the real
+    # systemctl — a harness leak.
     cat > "$STUB_BIN/systemctl" <<STUB
 #!/bin/bash
-case "\${1:-}" in
+verb=""
+for a in "\$@"; do
+    case "\$a" in
+        -*) continue ;;
+        *)  verb="\$a"; break ;;
+    esac
+done
+case "\$verb" in
     start|stop|restart|enable|disable|mask|unmask|daemon-reload|isolate|edit|preset|link|set-property)
         printf 'systemctl %s\n' "\$*" >> "$MUTATION_LOG"
         exit 0
@@ -140,6 +151,16 @@ case "\${1:-}" in
 esac
 STUB
     chmod +x "$STUB_BIN/flatpak"
+
+    # --- pw-dump: read-only graph probe, but the real graph is the *host's*
+    # and may legitimately contain a live Dolby chain, which would make the
+    # route-active assertions machine-dependent. Always report an empty graph.
+    cat > "$STUB_BIN/pw-dump" <<STUB
+#!/bin/bash
+echo '[]'
+exit 0
+STUB
+    chmod +x "$STUB_BIN/pw-dump"
 }
 
 export MUTATION_LOG
@@ -148,13 +169,17 @@ PATH="$STUB_BIN:$PATH"
 export PATH
 
 # ------------------------------------------------------------- sandboxes ----
-# sandbox_home — empty HOME; sets and exports HOME/BASHRC.
+# sandbox_home — empty HOME; sets and exports HOME/BASHRC, and pins the
+# XDG vars to the sandbox too (otherwise route-staging tests would read
+# and write the real ~/.local/share and ~/.config).
 sandbox_home() {
     SANDBOX="$TEST_TMP/home-$RANDOM$RANDOM"
     mkdir -p "$SANDBOX"
     HOME="$SANDBOX"
     BASHRC="$SANDBOX/.bashrc"
-    export HOME BASHRC
+    XDG_DATA_HOME="$SANDBOX/.local/share"
+    XDG_CONFIG_HOME="$SANDBOX/.config"
+    export HOME BASHRC XDG_DATA_HOME XDG_CONFIG_HOME
 }
 
 # ----------------------------------------------------------- mutation API ---

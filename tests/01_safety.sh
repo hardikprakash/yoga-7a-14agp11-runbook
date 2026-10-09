@@ -13,7 +13,7 @@ source tests/lib_test.sh
 
 RUNBOOK_SCRIPTS=(setup.sh lib.sh
     cli/install.sh cli/setup_shell_functions.sh cli/check.sh
-    audio/install.sh audio/check.sh
+    audio/install.sh audio/uninstall.sh audio/audio_lib.sh audio/check.sh
     fingerprint/install.sh fingerprint/check.sh
     touchscreen/install.sh touchscreen/uninstall.sh touchscreen/check.sh
     color-profiles/install.sh color-profiles/check.sh
@@ -91,7 +91,7 @@ done <<<"$rm_hits"
 
 # --- 5. scripts refuse to run as root --------------------------------------
 for s in setup.sh cli/install.sh cli/setup_shell_functions.sh \
-         audio/install.sh fingerprint/install.sh \
+         audio/install.sh audio/uninstall.sh fingerprint/install.sh \
          touchscreen/install.sh touchscreen/uninstall.sh \
          color-profiles/install.sh; do
     # cli installer is user-level-only (writes ~/.bashrc) and would just

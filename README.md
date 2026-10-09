@@ -21,7 +21,7 @@ ATNA-series OLED (HDR-capable) · RTL8922AE Wi-Fi/BT.
 | Module | What it fixes | Install | Sudo? | Reboot? |
 |---|---|---|---|---|
 | [`cli/`](cli/) | `bt_reset`, `bt_audio_reset`, `audio_reset`, `wifi_reset` shell functions — hardware recovery that escalates only when the light fix fails | `./setup.sh cli` | on demand | no |
-| [`audio/`](audio/) | Dolby Atmos speaker tuning from the Windows driver → EasyEffects presets (converter + venv + EE 8) | `./setup.sh audio` | for EE package | no |
+| [`audio/`](audio/) | Dolby Atmos speaker tuning from the Windows driver — pick a backend: EasyEffects presets (GUI) or a native PipeWire filter-chain | `./setup.sh audio [--backend easyeffects\|pipewire]` | for packages | no |
 | [`fingerprint/`](fingerprint/) | `fprintd` + `libfprint` so the Goodix sensor works; enrollment is one interactive command | `./setup.sh fingerprint` | yes | no |
 | [`touchscreen/`](touchscreen/) | boot-time I2C unbind/rebind so the Wacom touch + stylus register (probe-order race) | `./setup.sh touchscreen` | yes | **yes** |
 | [`color-profiles/`](color-profiles/) | Windows-exported ICC profiles → `~/.local/share/icc`, assign in Settings → Color | `./setup.sh color-profiles` | no | no |
@@ -33,7 +33,7 @@ Each module has its own README: what it does, how to verify, how to undo.
 
 - **One entry point.** `./setup.sh status | all | <module>`. Every module
   also has standalone `install.sh` / `check.sh` (+ `uninstall.sh` where it
-  makes sense).
+  makes sense: `./setup.sh <module> --uninstall`).
 - **Read-only status.** `check.sh` scripts only probe; `status` renders
   ✅ / ⚠️ / ❌ per module and exits non-zero if anything failed.
 - **Dry-run first.** `--dry-run` on any command prints every action.
@@ -41,6 +41,9 @@ Each module has its own README: what it does, how to verify, how to undo.
   (`--yes` to skip prompts; never run the scripts as root — they refuse).
 - **Escalate, don't nuke.** Even the shell functions try the light fix and
   only reload kernel modules when a health check fails.
+- **Pick one, switch cleanly.** The audio module has two backends
+  (easyeffects / pipewire); installing one offers to remove the other,
+  and `check.sh` flags a both-staged conflict instead of staying quiet.
 - **Risky stays manual.** The HDR fix edits the kernel command line and
   initramfs; `setup.sh` prints instructions, never executes them.
 - **No system python.** The audio converter uses a venv inside its own
@@ -49,10 +52,10 @@ Each module has its own README: what it does, how to verify, how to undo.
 ## Layout
 
 ```
-setup.sh              orchestrator (status | all | <module>)
+setup.sh              orchestrator (status | all | <module> | <module> --uninstall)
 lib.sh                shared helpers: logging, dry-run, confirm, pkg mgmt
 cli/                  shell functions + check
-audio/                converter (gitignored clone) + bundled XMLs
+audio/                converter (gitignored clone) + bundled XMLs + two backends
 fingerprint/          libfprint/fprintd install + check
 touchscreen/          I2C rebind service + README (manual steps kept)
 color-profiles/       icc/ profiles copied from Windows
@@ -78,15 +81,19 @@ tests/run_tests.sh     # safety, idempotency, portability — no sudo, no writes
 Covers: bash syntax of every script, `shellcheck` when available,
 dry-run performs zero mutations, check scripts emit the documented line
 format, `cli` install is idempotent (single block, re-runnable), no
-scripted path ever reaches the HDR bootloader/initramfs edit, and no
-hard-coded home paths.
+scripted path ever reaches the HDR bootloader/initramfs edit, no
+hard-coded home paths, and — for the audio backends — flag parsing
+(both syntaxes, aliases, bad/missing values, no hangs), setup.sh flag
+routing, route-state detection (none/one/both staged), per-backend
+uninstall (removes exactly its files, idempotent, declines without
+confirmation), and switch prompts that delete nothing under `--dry-run`.
 
 ## State on this machine (as of writing)
 
 | Module | State |
 |---|---|
 | cli | ✅ installed (4 functions in `~/.bashrc`) |
-| audio | presets + autoload configured; **EasyEffects 8 package still to install** (`./setup.sh audio`, needs your sudo password) |
+| audio | ❌ **both backends staged** (PipeWire conf from an earlier run + EasyEffects presets) — resolve with `./setup.sh audio --backend <easyeffects\|pipewire>` (removes the other), then install EE 8 / LV2 deps |
 | fingerprint | sensor detected; fingers not yet enrolled (`fprintd-enroll $USER`) |
 | touchscreen | ✅ service enabled, touch working |
 | color-profiles | ✅ 9/9 imported (assignment: Settings → Color) |
