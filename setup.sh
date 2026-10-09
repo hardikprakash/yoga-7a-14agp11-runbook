@@ -36,7 +36,8 @@ Usage:
   ./setup.sh <module> [...]       run one module:
                                   ${MODULES[*]}
   ./setup.sh <module> --uninstall run that module's uninstall.sh
-                                  (available: audio, touchscreen)
+                                  (available: audio, touchscreen, hdr —
+                                  hdr's is grubby-first, confirm-gated)
   ./setup.sh help                 this text
 
 Common flags (every command):
@@ -183,7 +184,9 @@ print_hdr_instructions() {
     4. ./check.sh                # verify the chain end to end
     5. optional, washed-out-HDR: mutter patch, see hdr/README.md
 
-  Undo any time with: sudo ./uninstall.sh   (in hdr/hdr-edid-fix/)
+  Undo any time with: ./setup.sh hdr --uninstall
+    (grubby-first wrapper — on BLS/Fedora the upstream uninstall.sh alone
+     leaves the param in /boot/loader/entries)
 EOF
 }
 
@@ -263,9 +266,15 @@ main() {
             if is_module "$cmd"; then
                 if [ "$cmd" = hdr ]; then
                     # hdr has no install.sh of its own: it only ever prints
-                    # status + manual instructions (bootloader risk).
-                    [ "$uninstall" = 1 ] &&
-                        die "hdr's uninstall is manual: cd hdr/hdr-edid-fix && sudo ./uninstall.sh (bootloader edit)"
+                    # status + manual instructions (bootloader risk). The
+                    # *uninstall* is scripted, though — a confirm-gated
+                    # grubby-first wrapper (see hdr/uninstall.sh).
+                    if [ "$uninstall" = 1 ]; then
+                        parse_common_flags ${common[@]+"${common[@]}"}
+                        refuse_root
+                        bash "$ROOT/hdr/uninstall.sh"
+                        return
+                    fi
                     parse_common_flags ${common[@]+"${common[@]}"}
                     refuse_root
                     cmd_hdr

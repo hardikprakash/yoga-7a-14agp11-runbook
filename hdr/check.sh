@@ -77,6 +77,21 @@ if [ "$cmdline_hit" = 0 ] && [ "$cmdline_staged" = 0 ] &&
 fi
 
 # --- verdict ---------------------------------------------------------------
+# Half-installed / half-removed state: the cmdline asks for a firmware
+# file that no longer exists. Happens when the upstream uninstall.sh ran
+# on a BLS system (it seds the configs but misses /boot/loader/entries —
+# see issue Boogie61/hdr-edid-fix#1). Every boot then requests a missing
+# file; the kernel falls back to the unpatched EDID, so the HDR switch
+# disappears again. Fix: ./setup.sh hdr --uninstall (removes the param
+# everywhere), then reinstall from scratch.
+if [ "$patched" = 0 ] && { [ "$cmdline_hit" = 1 ] || [ "$cmdline_staged" = 1 ]; }; then
+    chk_fail "cmdline asks for the patched EDID but the firmware file is missing"
+    chk_info "the kernel falls back to the unpatched EDID (HDR switch gone again)"
+    chk_info "finish the removal first: ./setup.sh hdr --uninstall"
+    chk_info "then reinstall: ./setup.sh hdr + the Fedora/grubby finish in hdr/README.md"
+    exit 1
+fi
+
 if [ "$needs_edid_fix" = 1 ]; then
     if [ "$patched" = 1 ] && { [ "$cmdline_hit" = 1 ] || [ "$cmdline_staged" = 1 ]; }; then
         chk_ok "EDID workaround active — problem 1 covered"

@@ -210,8 +210,16 @@ assert_rc "$rc" 1 "cli has no uninstall.sh → clear error"
 assert_contains "$out" "has no uninstall.sh" "missing uninstall named"
 
 out="$(timeout 10 ./setup.sh hdr --uninstall 2>&1)"; rc=$?
-assert_rc "$rc" 1 "hdr --uninstall stays manual"
-assert_contains "$out" "manual" "hdr uninstall points at the manual path"
+assert_rc "$rc" 1 "hdr --uninstall without a TTY/--yes declines (confirm-gated)"
+assert_contains "$out" "not a terminal, declining" "decline reason is explained"
+assert_file_exists "/usr/lib/firmware/edid/hdr-patched-edid.bin" "declined hdr uninstall removes nothing"
+
+out="$(timeout 10 ./setup.sh hdr --uninstall --dry-run 2>&1)"; rc=$?
+assert_rc "$rc" 0 "hdr --uninstall --dry-run completes"
+assert_contains "$out" "grubby --remove-args" "wrapper removes the param via grubby first"
+assert_contains "$out" "upstream uninstall" "wrapper runs the upstream uninstall second"
+assert_contains "$out" "dracut -f" "wrapper rebuilds the initramfs on dracut systems"
+assert_contains "$out" "dry-run: nothing was actually removed" "dry-run confirms nothing removed"
 
 out="$(timeout 10 ./setup.sh all --uninstall 2>&1)"; rc=$?
 assert_rc "$rc" 1 "all --uninstall rejected"

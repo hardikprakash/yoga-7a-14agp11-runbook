@@ -17,7 +17,7 @@ RUNBOOK_SCRIPTS=(setup.sh lib.sh
     fingerprint/install.sh fingerprint/check.sh
     touchscreen/install.sh touchscreen/uninstall.sh touchscreen/check.sh
     color-profiles/install.sh color-profiles/check.sh
-    hdr/check.sh)
+    hdr/check.sh hdr/uninstall.sh)
 
 echo "== 01 safety: static scan of runbook scripts =="
 
@@ -28,11 +28,13 @@ done
 # --- 1. nothing outside hdr/ may *execute* bootloader/initramfs machinery ---
 # Matches command invocations only (start of line / after run|sudo), so
 # comments and printed instructions that merely mention these are fine.
+# hdr/uninstall.sh is exempt BY DESIGN: it is the confirm-gated grubby-
+# first undo, reachable only via an explicit ./setup.sh hdr --uninstall.
 for s in "${RUNBOOK_SCRIPTS[@]}"; do
     case "$s" in
-        hdr/check.sh) continue ;;   # read-only probes, checked below
+        hdr/check.sh|hdr/uninstall.sh) continue ;;
     esac
-    hits="$(grep -nE '(^|[[:space:]])(run[[:space:]]+)?(sudo[[:space:]]+)?(mkinitcpio|grub-mkconfig|dracut|dracut-rebuild|update-grub|limine-update|grub2-mkconfig)([[:space:]]|$)|>>?[[:space:]]*/etc/(default/grub|kernel/cmdline|mkinitcpio)' "$s" 2>/dev/null || true)"
+    hits="$(grep -nE '(^|[[:space:]])(run[[:space:]]+)?(sudo[[:space:]]+)?(mkinitcpio|grub-mkconfig|grub2-mkconfig|dracut|dracut-rebuild|update-grub|limine-update|grubby)([[:space:]]|$)|>>?[[:space:]]*/etc/(default/grub|kernel/cmdline|mkinitcpio)' "$s" 2>/dev/null || true)"
     # Ignore pure comments: strip lines whose first non-space char is '#'.
     hits="$(grep -vE '^[[:space:]]*#' <<<"$hits" || true)"
     if [ -n "$hits" ]; then
@@ -94,7 +96,7 @@ for s in setup.sh cli/install.sh cli/setup_shell_functions.sh \
          cli/setup_bash_completion.sh \
          audio/install.sh audio/uninstall.sh fingerprint/install.sh \
          touchscreen/install.sh touchscreen/uninstall.sh \
-         color-profiles/install.sh; do
+         color-profiles/install.sh hdr/uninstall.sh; do
     # cli installer is user-level-only (writes ~/.bashrc) and would just
     # fail weirdly as root — require an explicit guard or a $HOME write that
     # cannot reach system paths.

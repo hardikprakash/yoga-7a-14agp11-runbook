@@ -23,7 +23,7 @@ SCRIPTS=(setup.sh lib.sh
     fingerprint/install.sh fingerprint/check.sh
     touchscreen/install.sh touchscreen/uninstall.sh touchscreen/check.sh
     color-profiles/install.sh color-profiles/check.sh
-    hdr/check.sh)
+    hdr/check.sh hdr/uninstall.sh)
 
 # SC1091: sourced-file paths can't be resolved statically (we use computed
 # paths); SC2317: "unreachable" in sourced stubs. Excluded globally.

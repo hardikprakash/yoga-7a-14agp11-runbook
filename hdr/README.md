@@ -48,11 +48,8 @@ bootloader it prints the parameter to add by hand.
 
 ### If the panel stays dark at boot
 
-Edit the bootloader entry once and drop `drm.edid_firmware=...` — or:
-
-```bash
-sudo ./uninstall.sh        # removes param + firmware + regenerates initramfs
-```
+Edit the bootloader entry once and drop `drm.edid_firmware=...` — or run
+the [uninstall](#uninstall) below.
 
 ### Fedora / BLS bootloaders (grubby) — the installer can't do this part
 
@@ -75,9 +72,40 @@ sudo reboot
 ```
 
 Verify (before reboot, `grubby` shows the staged state; `/proc/cmdline`
-only after): `grubby --info=ALL | grep edid`. To undo:
-`sudo grubby --remove-args="drm.edid_firmware=eDP-1:edid/hdr-patched-edid.bin"`
-plus `sudo ./uninstall.sh` for the firmware and dracut hook.
+only after): `grubby --info=ALL | grep edid`. To undo, see
+[Uninstall](#uninstall) — on BLS the stock `uninstall.sh` alone leaves
+the param behind.
+
+## Uninstall
+
+```bash
+./setup.sh hdr --uninstall        # or: cd hdr && ./uninstall.sh
+```
+
+The runbook wrapper exists because the upstream `uninstall.sh` has the
+same BLS blind spot as the installer: it seds `/etc/default/grub` and
+`/etc/kernel/cmdline` but never touches `/boot/loader/entries/*.conf`
+([upstream #1](https://github.com/Boogie61/hdr-edid-fix/issues/1)). On
+Fedora that leaves `drm.edid_firmware=` pointing at a firmware file
+that was just deleted — every boot then falls back to the unpatched
+EDID, and `./setup.sh status` flags the dangling state.
+
+The wrapper removes things **in the order that keeps state consistent**:
+
+1. `sudo grubby --remove-args=…` — param gone from BLS entries + both
+   config files. If this fails, nothing else runs (never "param set,
+   file deleted").
+2. upstream `uninstall.sh` — config seds, the firmware file, the dracut hook
+3. `sudo dracut -f` — rebuilds the initramfs without the file (the
+   upstream regen step misses Fedora's tooling, same as the installer)
+
+Confirm-gated, `--dry-run` previews every step. Manual equivalent:
+
+```bash
+sudo grubby --remove-args="drm.edid_firmware=eDP-1:edid/hdr-patched-edid.bin"
+cd hdr/hdr-edid-fix && sudo ./uninstall.sh
+sudo dracut -f
+```
 
 Note: `./setup.sh status` (hdr module) sees both states — active
 (`/proc/cmdline`) and staged (config files / `grubby`) — so a staged-but-

@@ -30,7 +30,7 @@ space (`./setup.sh audio --backend <Tab>`).
 | [`fingerprint/`](fingerprint/) | `fprintd` + `libfprint` so the Goodix sensor works; enrollment is one interactive command | `./setup.sh fingerprint` | yes | no |
 | [`touchscreen/`](touchscreen/) | boot-time I2C unbind/rebind so the Wacom touch + stylus register (probe-order race) | `./setup.sh touchscreen` | yes | **yes** |
 | [`color-profiles/`](color-profiles/) | Windows-exported ICC profiles → `~/.local/share/icc`, assign in Settings → Color | `./setup.sh color-profiles` | no | no |
-| [`hdr/`](hdr/) | patched EDID so the HDR switch appears (libdisplay-info 0.3.0), + optional mutter patch | **manual** — `./setup.sh hdr` prints the steps | yes | **yes** |
+| [`hdr/`](hdr/) | patched EDID so the HDR switch appears (libdisplay-info 0.3.0), + optional mutter patch | **manual** — `./setup.sh hdr` prints the steps; uninstall is a confirm-gated grubby-first wrapper | yes | **yes** |
 
 Each module has its own README: what it does, how to verify, how to undo.
 
@@ -49,8 +49,11 @@ Each module has its own README: what it does, how to verify, how to undo.
 - **Pick one, switch cleanly.** The audio module has two backends
   (easyeffects / pipewire); installing one offers to remove the other,
   and `check.sh` flags a both-staged conflict instead of staying quiet.
-- **Risky stays manual.** The HDR fix edits the kernel command line and
-  initramfs; `setup.sh` prints instructions, never executes them.
+- **Risky stays manual.** The HDR *install* edits the kernel command
+  line and initramfs; `setup.sh` prints instructions, never executes
+  them. Its *uninstall* is scripted but confirm-gated and grubby-first
+  (`./setup.sh hdr --uninstall`) — removal can't black-screen a boot,
+  and ordering it param-before-file keeps a failed run consistent.
 - **No system python.** The audio converter uses a venv inside its own
   repo; only EasyEffects itself is a package install.
 
