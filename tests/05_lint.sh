@@ -18,7 +18,7 @@ if ! command -v shellcheck >/dev/null 2>&1; then
 fi
 
 SCRIPTS=(setup.sh lib.sh
-    cli/install.sh cli/setup_shell_functions.sh cli/check.sh
+    cli/install.sh cli/setup_shell_functions.sh cli/setup_bash_completion.sh cli/check.sh
     audio/install.sh audio/uninstall.sh audio/audio_lib.sh audio/check.sh
     fingerprint/install.sh fingerprint/check.sh
     touchscreen/install.sh touchscreen/uninstall.sh touchscreen/check.sh

@@ -16,11 +16,16 @@ ATNA-series OLED (HDR-capable) · RTL8922AE Wi-Fi/BT.
 ./setup.sh all         # install what can be automated (asks before sudo)
 ```
 
+`./setup.sh cli` also installs **bash tab completion** for these commands
+and flags — context-aware: `--backend`, `--variant` and `--force` only
+complete after `audio`/`all`, and their values complete after `=` or a
+space (`./setup.sh audio --backend <Tab>`).
+
 ## The modules
 
 | Module | What it fixes | Install | Sudo? | Reboot? |
 |---|---|---|---|---|
-| [`cli/`](cli/) | `bt_reset`, `bt_audio_reset`, `audio_reset`, `wifi_reset` shell functions — hardware recovery that escalates only when the light fix fails | `./setup.sh cli` | on demand | no |
+| [`cli/`](cli/) | `bt_reset`, `bt_audio_reset`, `audio_reset`, `wifi_reset` shell functions (escalate only when the light fix fails) + bash tab completion for `./setup.sh` flags | `./setup.sh cli` | on demand | no |
 | [`audio/`](audio/) | Dolby Atmos speaker tuning from the Windows driver — pick a backend: EasyEffects presets (GUI) or a native PipeWire filter-chain | `./setup.sh audio [--backend easyeffects\|pipewire]` | for packages | no |
 | [`fingerprint/`](fingerprint/) | `fprintd` + `libfprint` so the Goodix sensor works; enrollment is one interactive command | `./setup.sh fingerprint` | yes | no |
 | [`touchscreen/`](touchscreen/) | boot-time I2C unbind/rebind so the Wacom touch + stylus register (probe-order race) | `./setup.sh touchscreen` | yes | **yes** |
@@ -54,7 +59,7 @@ Each module has its own README: what it does, how to verify, how to undo.
 ```
 setup.sh              orchestrator (status | all | <module> | <module> --uninstall)
 lib.sh                shared helpers: logging, dry-run, confirm, pkg mgmt
-cli/                  shell functions + check
+cli/                  shell functions + setup.sh tab completion + check
 audio/                converter (gitignored clone) + bundled XMLs + two backends
 fingerprint/          libfprint/fprintd install + check
 touchscreen/          I2C rebind service + README (manual steps kept)
@@ -88,8 +93,11 @@ routing, route-state detection (none/one/both staged), per-backend
 uninstall (removes exactly its files, idempotent, declines without
 confirmation), switch prompts that delete nothing under `--dry-run`,
 `--force` (pipewire-only, fail-fast on an existing conf), `--variant all`
-rejection, and the PipeWire LV2 loader probe (missing loader = chain
-silently discarded; Fedora `pipewire-module-filter-chain-lv2`).
+(as three selectable outputs via `--target-sink ''`), the PipeWire LV2
+loader probe (missing loader = chain silently discarded; Fedora
+`pipewire-module-filter-chain-lv2`), and bash tab completion
+(command/flag/value completion in context, installer idempotency,
+working in a fresh `bash -ic`).
 
 ## State on this machine (as of writing)
 
