@@ -84,6 +84,24 @@ EasyEffects → preferences → enable **Background Service** and
 ./setup.sh audio --backend pipewire --variant detailed   # or warm
 ```
 
+### All three voicings as selectable outputs (pipewire backend)
+
+```bash
+./setup.sh audio --backend pipewire --variant all
+```
+
+This installs `Dolby_Balanced`, `Dolby_Detailed` and `Dolby_Warm` as three
+separate outputs (`--target-sink ''`, v1 virtual-sink confs) — pick one in
+Sound Settings. **Trade-off:** no smart-filter routing, so the chains do
+not attach themselves to the speaker; you select the voicing manually,
+and each chain puts a second volume control in the path. The voicings
+also sit at most ~1 dB apart, so the difference is subtle. Back to the
+transparent single-chain setup:
+
+```bash
+./setup.sh audio --backend pipewire --variant balanced --force
+```
+
 ## Remove / switch (reversible)
 
 ```bash

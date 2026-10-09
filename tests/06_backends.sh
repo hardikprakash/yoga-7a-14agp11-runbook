@@ -255,10 +255,14 @@ out="$(timeout 30 ./setup.sh audio --backend pipewire --dry-run 2>&1)"; rc=$?
 assert_rc "$rc" 0 "dry-run with existing conf completes"
 assert_contains "$out" "would stop here" "dry-run warns about the would-be failure"
 
-# --variant all: rejected with the reasoning (needs --target-sink '')
-out="$(timeout 10 ./setup.sh audio --variant all 2>&1)"; rc=$?
-assert_rc "$rc" 1 "--variant all rejected"
-assert_contains "$out" "--target-sink" "rejection explains the requirement"
+# --variant all: accepted, converter gets --target-sink '' (v1 virtual-sink
+# mode — the three voicings become selectable outputs, no smart routing)
+out="$(timeout 30 ./setup.sh audio --backend pipewire --variant all --dry-run 2>&1)"; rc=$?
+assert_rc "$rc" 0 "--variant all accepted"
+conv="$(grep 'dolby_to_pipewire.py ' <<<"$out" | grep -v doctor | head -1)"
+assert_contains "$conv" "--variant all" "converter gets --variant all"
+assert_contains "$conv" "--target-sink" "converter gets --target-sink (required for multi-chain)"
+assert_contains "$out" "pick the" "post-install explains the v1 virtual-sink trade-off"
 rm -rf "${XDG_CONFIG_HOME}/pipewire"
 
 # ============================================ 9. LV2 loader detection ========

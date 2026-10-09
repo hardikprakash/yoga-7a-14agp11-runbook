@@ -47,7 +47,9 @@ Common flags (every command):
 audio module flags:
   --backend easyeffects|pipewire   how to apply the Dolby tuning
                                    (aliases: ee, pw; default: easyeffects)
-  --variant balanced|detailed|warm  pipewire backend only: which voicing
+  --variant balanced|detailed|warm|all
+                                   pipewire backend only: which voicing
+                                   ('all' = all three as selectable outputs)
   --force                          pipewire backend only: overwrite an
                                    existing Dolby_*.conf instead of failing
 

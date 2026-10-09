@@ -33,8 +33,9 @@ audio module — Dolby Atmos speaker tuning for Linux.
   ee / pw                accepted as short aliases
   --variant balanced|detailed|warm|all
                          pipewire only: which voicing to convert (default
-                         balanced; 'all' needs --target-sink semantics the
-                         runbook doesn't set — use balanced/detailed/warm)
+                         balanced). 'all' installs all three as separate
+                         outputs you pick between in sound settings (no
+                         smart-filter routing — see README)
   --force                pipewire only: overwrite an existing Dolby_*.conf
                          + .irs instead of the converter refusing
 
@@ -86,10 +87,8 @@ fi
 BACKEND="$normalized"
 if [ -n "$VARIANT" ]; then
     case "$VARIANT" in
-        balanced|detailed|warm) ;;
-        all)
-            die "--variant all installs several chains and needs --target-sink '' + smart-filter routing off — not automated here; run the converter by hand, see audio/README.md" ;;
-        *) die "unknown variant '$VARIANT' (balanced|detailed|warm)" ;;
+        balanced|detailed|warm|all) ;;
+        *) die "unknown variant '$VARIANT' (balanced|detailed|warm|all)" ;;
     esac
 fi
 if [ "$FORCE" = 1 ] && [ "$BACKEND" != pipewire ]; then
@@ -341,17 +340,34 @@ if [ "$BACKEND" = easyeffects ]; then
 else
     variant_args=()
     [ -n "$VARIANT" ] && variant_args=(--variant "$VARIANT")
+    if [ "$VARIANT" = all ]; then
+        # Multi-chain mode: the converter requires --target-sink '' (empty),
+        # which switches every conf to v1 virtual-sink form — no smart-filter
+        # routing, so the three voicings appear as separate outputs to pick
+        # between instead of running in series. Expected effect: subtle (the
+        # voicings sit at most ~1 dB apart).
+        variant_args+=(--target-sink '')
+    fi
 
     # Fail fast: without --force the converter generates everything, then
     # refuses at the very end because the conf exists — a wasted ~30s run.
     # Name rule (from the tool): preset Dolby-Balanced → conf Dolby_Balanced.
-    vname="${VARIANT:-balanced}"
-    conf_name="Dolby_$(tr '[:lower:]' '[:upper:]' <<<"${vname:0:1}")${vname:1}"
-    if [ "$FORCE" = 0 ] && [ -f "$AUDIO_PW_DIR/$conf_name.conf" ]; then
+    conf_names=()
+    if [ "$VARIANT" = all ]; then
+        conf_names=(Dolby_Balanced Dolby_Detailed Dolby_Warm)
+    else
+        vname="${VARIANT:-balanced}"
+        conf_names=("Dolby_$(tr '[:lower:]' '[:upper:]' <<<"${vname:0:1}")${vname:1}")
+    fi
+    existing=()
+    for cn in "${conf_names[@]}"; do
+        [ -f "$AUDIO_PW_DIR/$cn.conf" ] && existing+=("$cn.conf")
+    done
+    if [ "$FORCE" = 0 ] && [ "${#existing[@]}" -gt 0 ]; then
         if [ "$DRY_RUN" = 1 ]; then
-            log_warn "$conf_name.conf exists — the real run would stop here; pass --force to overwrite"
+            log_warn "${existing[*]} exist(s) — the real run would stop here; pass --force to overwrite"
         else
-            die "$AUDIO_PW_DIR/$conf_name.conf exists — pass --force to overwrite, or remove it first: ./setup.sh audio --uninstall --backend pipewire"
+            die "${existing[*]} exist — pass --force to overwrite, or remove first: ./setup.sh audio --uninstall --backend pipewire"
         fi
     fi
     [ "$FORCE" = 1 ] && variant_args+=(--force)
@@ -361,7 +377,16 @@ else
         ${variant_args[@]+"${variant_args[@]}"}
 
     echo
-    log_ok "PipeWire filter-chain installed and loaded."
-    log_info "switch voicing later: ./install.sh --backend pipewire --variant detailed|warm"
+    if [ "$VARIANT" = all ]; then
+        log_ok "3 PipeWire chains installed: Dolby_Balanced, Dolby_Detailed, Dolby_Warm."
+        log_info "these are v1 virtual sinks (no smart-filter routing): pick the"
+        log_info "voicing yourself in Sound Settings — each appears as its own output."
+        log_info "they differ subtly (voicings sit at most ~1 dB apart)."
+        log_info "back to the transparent single-chain setup:"
+        log_info "  ./setup.sh audio --backend pipewire --variant balanced --force"
+    else
+        log_ok "PipeWire filter-chain installed and loaded."
+        log_info "switch voicing later: ./install.sh --backend pipewire --variant detailed|warm"
+    fi
     log_info "sound wrong? run the doctor: $VENV/bin/python $REPO/dolby_to_pipewire.py --doctor"
 fi
