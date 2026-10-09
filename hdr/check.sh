@@ -50,26 +50,52 @@ if [ -f "$FW_PATH" ]; then
     chk_ok "patched EDID installed: $FW_PATH ($(wc -c <"$FW_PATH") bytes)"
 fi
 
+# Three places the param can live, and they mean different things:
+#   /proc/cmdline          → ACTIVE on the running kernel
+#   config files + grubby  → STAGED, pending (re)generation and/or reboot
+# grubby --info needs root on BLS systems (/boot/loader/entries is 700), so
+# the config files are the root-free staged check; grubby is a last resort.
 cmdline_hit=0
+cmdline_staged=0
 if grep -q "drm.edid_firmware=.*$FW_NAME" /proc/cmdline 2>/dev/null; then
     cmdline_hit=1
     chk_ok "kernel command line carries drm.edid_firmware=...$FW_NAME"
 fi
-for f in /etc/default/grub /etc/kernel/cmdline /etc/default/limine; do
-    if grep -q "drm.edid_firmware=.*$FW_NAME" "$f" 2>/dev/null; then
-        chk_info "cmdline param present in $f (regenerated at next bootloader update)"
-    fi
-done
+if [ "$cmdline_hit" = 0 ]; then
+    for f in /etc/default/grub /etc/kernel/cmdline /etc/default/limine; do
+        if grep -q "drm.edid_firmware=.*$FW_NAME" "$f" 2>/dev/null; then
+            cmdline_staged=1
+            chk_ok "param staged in $f — active after bootloader regen + reboot"
+        fi
+    done
+fi
+if [ "$cmdline_hit" = 0 ] && [ "$cmdline_staged" = 0 ] &&
+   command -v grubby >/dev/null 2>&1 &&
+   grubby --info=ALL 2>/dev/null | grep -q "drm.edid_firmware=.*$FW_NAME"; then
+    cmdline_staged=1
+    chk_ok "param staged via grubby (BLS) — active after reboot"
+fi
 
 # --- verdict ---------------------------------------------------------------
 if [ "$needs_edid_fix" = 1 ]; then
-    if [ "$patched" = 1 ] && [ "$cmdline_hit" = 1 ]; then
+    if [ "$patched" = 1 ] && { [ "$cmdline_hit" = 1 ] || [ "$cmdline_staged" = 1 ]; }; then
         chk_ok "EDID workaround active — problem 1 covered"
+        [ "$cmdline_hit" = 0 ] && chk_info "staged but not live yet: reboot once to activate"
+        # Fedora: the initramfs must carry the file (DRM loads from it);
+        # the dracut conf is the hook that puts it there.
+        if [ -f /etc/dracut.conf.d/90-hdr-edid.conf ] ||
+           grep -q "$FW_PATH" /etc/dracut.conf.d/*.conf /etc/dracut.conf 2>/dev/null; then
+            chk_ok "dracut hook present (file will be in every initramfs)"
+        elif [ "$(pkg_manager 2>/dev/null)" = dnf ] || command -v dracut >/dev/null 2>&1; then
+            chk_warn "no dracut hook — the initramfs may lack the EDID (DRM loads early)"
+            chk_info "re-run: cd hdr/hdr-edid-fix && sudo ./install.sh (its dracut step worked)"
+        fi
         chk_info "full chain walk: hdr/hdr-edid-fix/check.sh (after enabling HDR)"
     else
         chk_fail "HDR switch will be missing: fix not installed yet"
         chk_info "./setup.sh hdr prints the guided steps (never automated: bootloader + initramfs)"
         chk_info "preview safely first: hdr/hdr-edid-fix/edid/patch-edid.py --check"
+        chk_info "Fedora note: the upstream installer cannot edit grubby/BLS — see hdr/README.md"
     fi
 elif [ "$patched" = 0 ]; then
     chk_ok "no EDID patch needed on this libdisplay-info"

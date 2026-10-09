@@ -176,6 +176,9 @@ print_hdr_instructions() {
     2. cd hdr/hdr-edid-fix
        ./edid/patch-edid.py --check     # should report an HDR metadata block
        sudo ./install.sh                # patched EDID + cmdline + initramfs
+       Fedora/BLS note: if install.sh says "Could not detect your
+       bootloader", that is a false negative — finish with grubby, see
+       hdr/README.md ("Fedora / BLS bootloaders")
     3. reboot
     4. ./check.sh                # verify the chain end to end
     5. optional, washed-out-HDR: mutter patch, see hdr/README.md

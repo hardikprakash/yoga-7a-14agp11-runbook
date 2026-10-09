@@ -54,6 +54,35 @@ Edit the bootloader entry once and drop `drm.edid_firmware=...` — or:
 sudo ./uninstall.sh        # removes param + firmware + regenerates initramfs
 ```
 
+### Fedora / BLS bootloaders (grubby) — the installer can't do this part
+
+The upstream `install.sh` handles mkinitcpio/dracut and limine/GRUB well,
+but on Fedora (and anything using BLS, `GRUB_ENABLE_BLSCFG=true`) it
+fails at the cmdline step: it sed-matches `GRUB_CMDLINE_LINUX_DEFAULT=`
+(Arch naming; Fedora uses `GRUB_CMDLINE_LINUX=`) and looks for
+`grub-mkconfig` (Fedora: `grub2-mkconfig`). Its "Could not detect your
+bootloader" is a false negative — GRUB is there, just in BLS form.
+
+The first two steps above (patch + `sudo ./install.sh`) still work — the
+firmware file and dracut hook land correctly. Finish the job with
+`grubby`, the canonical Fedora tool:
+
+```bash
+sudo grubby --update-kernel=ALL \
+    --args="drm.edid_firmware=eDP-1:edid/hdr-patched-edid.bin"
+sudo dracut -f          # bake the EDID into the initramfs now
+sudo reboot
+```
+
+Verify (before reboot, `grubby` shows the staged state; `/proc/cmdline`
+only after): `grubby --info=ALL | grep edid`. To undo:
+`sudo grubby --remove-args="drm.edid_firmware=eDP-1:edid/hdr-patched-edid.bin"`
+plus `sudo ./uninstall.sh` for the firmware and dracut hook.
+
+Note: `./setup.sh status` (hdr module) sees both states — active
+(`/proc/cmdline`) and staged (config files / `grubby`) — so a staged-but-
+not-rebooted install reports as "active after reboot", not as missing.
+
 ## Problem 2 — washed-out HDR (GNOME, optional)
 
 Until [mutter!5199](https://gitlab.gnome.org/GNOME/mutter/-/merge_requests/5199)
